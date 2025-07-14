@@ -1,15 +1,22 @@
 import Header from '@/components/Header';
 import ProductCard from '@/components/ProductCard';
-import { getPrintifyAPI } from '@/lib/printify';
+import { getPrintfulAPI } from '@/lib/printful';
 import { ArrowRight, Star, Truck, Shield, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 
 export default async function HomePage() {
-  const printify = getPrintifyAPI();
-  const shopId = process.env.PRINTIFY_SHOP_ID!;
-  const productsResponse = await printify.getProducts(shopId, 1, 1); // Only fetch one product for now
-  const featuredProducts = productsResponse.data;
+  let featuredProducts: any[] = [];
+  
+  try {
+    const printful = getPrintfulAPI();
+    // Fetch SwingHigh products specifically
+    const productsResponse = await printful.getSwingHighProducts(0, 6); // Fetch 6 SwingHigh products
+    featuredProducts = Array.isArray(productsResponse.data) ? productsResponse.data : [];
+  } catch (error) {
+    console.log('Could not fetch products:', error);
+    featuredProducts = [];
+  }
 
   return (
     <div className="min-h-screen">
@@ -91,9 +98,15 @@ export default async function HomePage() {
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {featuredProducts.map((product) => (
-              <ProductCard key={product.id} product={product} />
-            ))}
+            {featuredProducts.length > 0 ? (
+              featuredProducts.map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))
+            ) : (
+              <div className="col-span-full text-center py-12">
+                <p className="text-gray-500">No products available at the moment.</p>
+              </div>
+            )}
           </div>
           
           <div className="text-center mt-12">

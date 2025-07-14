@@ -1,9 +1,10 @@
 import Header from '@/components/Header';
-import { getPrintifyAPI } from '@/lib/printify';
+import { getProductService } from '@/lib/products';
 import { ArrowLeft, ShoppingCart, Heart, Star, Truck, Shield, RefreshCw } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import VariantSelector from './VariantSelector';
 
 interface ProductPageProps {
   params: {
@@ -12,28 +13,57 @@ interface ProductPageProps {
 }
 
 export default async function ProductPage({ params }: ProductPageProps) {
-  const printify = getPrintifyAPI();
-  const shopId = process.env.PRINTIFY_SHOP_ID!;
+  const productService = getProductService();
   let product;
+  
   try {
-    product = await printify.getProduct(shopId, params.id);
-  } catch {
+    // Extract product ID from the slug format: "product-name-platform-id"
+    // The URL format is: /products/product-name-platform-id
+    // We need to extract the platform-id part, handling product names with dashes
+    const productIdMatch = params.id.match(/-(printify|printful)-([^-]+)$/);
+    let finalProductId = params.id;
+    
+    if (productIdMatch) {
+      // We found a platform identifier, use it
+      finalProductId = `${productIdMatch[1]}-${productIdMatch[2]}`;
+    } else {
+      // Fallback: try to extract just the last part and assume Printful
+      const lastDashMatch = params.id.match(/-([^-]+)$/);
+      if (lastDashMatch) {
+        finalProductId = `printful-${lastDashMatch[1]}`;
+      }
+    }
+    
+    console.log('Product details page - params.id:', params.id);
+    console.log('Product details page - final productId:', finalProductId);
+    
+    // Get the unified product
+    product = await productService.getUnifiedProduct(finalProductId);
+    console.log('Product details page - found product:', product ? 'yes' : 'no');
+    
+    if (!product) {
+      console.log('Product details page - product not found, returning 404');
+      notFound();
+    }
+  } catch (error) {
+    console.log('Product details page - error:', error);
     notFound();
   }
 
-  // Fetch one related product (not the current one)
-  const productsResponse = await printify.getProducts(shopId, 1, 2);
-  const relatedProducts = productsResponse.data.filter(p => p.id !== params.id).slice(0, 1);
+  const mainImage = product.images?.[0]?.src || '';
+  
+  // Since there's only one product, we'll show an empty related products section
+  const relatedProducts: any[] = [];
 
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-    }).format(price / 100);
+    }).format(price);
   };
 
-  const lowestPrice = Math.min(...product.variants.map(v => v.price));
-  const highestPrice = Math.max(...product.variants.map(v => v.price));
+  const lowestPrice = product.variants.length > 0 ? Math.min(...product.variants.map(v => v.price)) : 0;
+  const highestPrice = product.variants.length > 0 ? Math.max(...product.variants.map(v => v.price)) : 0;
   const hasMultiplePrices = lowestPrice !== highestPrice;
 
   return (
@@ -48,7 +78,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
             <span>/</span>
             <Link href="/products" className="hover:text-primary-600">Products</Link>
             <span>/</span>
-            <span className="text-gray-900">{product.title}</span>
+            <span className="text-gray-900">{product.name}</span>
           </div>
         </div>
       </div>
@@ -59,10 +89,10 @@ export default async function ProductPage({ params }: ProductPageProps) {
           {/* Product Images */}
           <div className="space-y-4">
             <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
-              {product.images.length > 0 ? (
+              {mainImage ? (
                 <Image
-                  src={product.images[0].src}
-                  alt={product.title}
+                  src={mainImage}
+                  alt={product.name}
                   width={600}
                   height={600}
                   className="w-full h-full object-cover"
@@ -81,7 +111,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
                   <div key={index} className="aspect-square bg-gray-100 rounded-lg overflow-hidden">
                     <Image
                       src={image.src}
-                      alt={`${product.title} ${index + 2}`}
+                      alt={`${product.name} ${index + 2}`}
                       width={150}
                       height={150}
                       className="w-full h-full object-cover"
@@ -95,7 +125,16 @@ export default async function ProductPage({ params }: ProductPageProps) {
           {/* Product Info */}
           <div className="space-y-6">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">{product.title}</h1>
+              <div className="flex items-center space-x-3 mb-2">
+                <h1 className="text-3xl font-bold text-gray-900">{product.name}</h1>
+                <span className={`px-3 py-1 text-sm font-medium rounded-full ${
+                  product.platform === 'printify' 
+                    ? 'bg-blue-100 text-blue-800' 
+                    : 'bg-green-100 text-green-800'
+                }`}>
+                  {product.platform === 'printify' ? 'Printify' : 'Printful'}
+                </span>
+              </div>
               <div className="flex items-center space-x-4 mb-4">
                 <div className="flex items-center">
                   {[...Array(5)].map((_, i) => (
@@ -125,24 +164,31 @@ export default async function ProductPage({ params }: ProductPageProps) {
             {/* Description */}
             <div>
               <h3 className="font-semibold text-gray-900 mb-2">Description</h3>
-              <p className="text-gray-600 leading-relaxed">{product.description}</p>
+              {product.description ? (
+                <div 
+                  className="text-gray-600 leading-relaxed prose prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{ 
+                    __html: product.description 
+                      .replace(/<p>/g, '<p class="mb-4">')
+                      .replace(/<ul>/g, '<ul class="list-disc list-inside mb-4 space-y-1">')
+                      .replace(/<ol>/g, '<ol class="list-decimal list-inside mb-4 space-y-1">')
+                      .replace(/<li>/g, '<li class="text-gray-600">')
+                      .replace(/<strong>/g, '<strong class="font-semibold text-gray-900">')
+                      .replace(/<em>/g, '<em class="italic">')
+                      .replace(/<h[1-6]>/g, '<h3 class="font-semibold text-gray-900 mt-6 mb-2">')
+                      .replace(/<\/h[1-6]>/g, '</h3>')
+                      .replace(/<a /g, '<a class="text-primary-600 hover:text-primary-700 underline" ')
+                  }}
+                />
+              ) : (
+                <p className="text-gray-500 italic">No description available.</p>
+              )}
             </div>
 
             {/* Variants */}
-            <div>
-              <h3 className="font-semibold text-gray-900 mb-3">Select Options</h3>
-              <div className="grid grid-cols-2 gap-3">
-                {product.variants.map((variant) => (
-                  <button
-                    key={variant.id}
-                    className="p-3 border border-gray-300 rounded-lg text-left hover:border-primary-500 hover:bg-primary-50 transition-colors"
-                  >
-                    <div className="font-medium text-gray-900">{variant.title}</div>
-                    <div className="text-sm text-gray-600">{formatPrice(variant.price)}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
+            {product.variants.length > 0 && (
+              <VariantSelector variants={product.variants} />
+            )}
 
             {/* Add to Cart */}
             <div className="space-y-4">
@@ -152,9 +198,17 @@ export default async function ProductPage({ params }: ProductPageProps) {
                   <span className="px-4 py-2 border-x border-gray-300">1</span>
                   <button className="px-3 py-2 text-gray-600 hover:text-gray-900">+</button>
                 </div>
-                <button className="flex-1 btn-primary flex items-center justify-center space-x-2 py-3">
+                <button 
+                  className="flex-1 btn-primary flex items-center justify-center space-x-2 py-3"
+                  disabled={product.platform === 'printful' && product.variants.length === 0}
+                >
                   <ShoppingCart className="w-5 h-5" />
-                  <span>Add to Cart</span>
+                  <span>
+                    {product.platform === 'printful' && product.variants.length === 0 
+                      ? 'Loading...' 
+                      : 'Add to Cart'
+                    }
+                  </span>
                 </button>
               </div>
               
@@ -164,19 +218,21 @@ export default async function ProductPage({ params }: ProductPageProps) {
             </div>
 
             {/* Tags */}
-            <div>
-              <h3 className="font-semibold text-gray-900 mb-2">Tags</h3>
-              <div className="flex flex-wrap gap-2">
-                {product.tags.map((tag, index) => (
-                  <span
-                    key={index}
-                    className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm"
-                  >
-                    {tag}
-                  </span>
-                ))}
+            {product.tags && product.tags.length > 0 && (
+              <div>
+                <h3 className="font-semibold text-gray-900 mb-2">Tags</h3>
+                <div className="flex flex-wrap gap-2">
+                  {product.tags.map((tag, index) => (
+                    <span
+                      key={index}
+                      className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Features */}
             <div className="border-t border-gray-200 pt-6">
@@ -207,33 +263,39 @@ export default async function ProductPage({ params }: ProductPageProps) {
             <p className="text-lg text-gray-600">Discover more amazing products</p>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-            {relatedProducts.map((relatedProduct) => (
-              <div key={relatedProduct.id} className="card group">
-                <div className="aspect-square bg-gray-100 rounded-t-lg overflow-hidden">
-                  {relatedProduct.images.length > 0 ? (
-                    <Image
-                      src={relatedProduct.images[0].src}
-                      alt={relatedProduct.title}
-                      width={300}
-                      height={300}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <span className="text-gray-400">No image</span>
-                    </div>
-                  )}
+          {relatedProducts.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+              {relatedProducts.map((relatedProduct) => (
+                <div key={relatedProduct.id} className="card group">
+                  <div className="aspect-square bg-gray-100 rounded-t-lg overflow-hidden">
+                    {relatedProduct.images && relatedProduct.images.length > 0 ? (
+                      <Image
+                        src={relatedProduct.images[0].src}
+                        alt={relatedProduct.name}
+                        width={300}
+                        height={300}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <span className="text-gray-400">No image</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-4">
+                    <h3 className="font-semibold text-gray-900 mb-2">{relatedProduct.name}</h3>
+                    <p className="text-lg font-bold text-gray-900">
+                      {formatPrice(Math.min(...relatedProduct.variants.map((v: any) => v.price)))}
+                    </p>
+                  </div>
                 </div>
-                <div className="p-4">
-                  <h3 className="font-semibold text-gray-900 mb-2">{relatedProduct.title}</h3>
-                  <p className="text-lg font-bold text-gray-900">
-                    {formatPrice(Math.min(...relatedProduct.variants.map(v => v.price)))}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <p className="text-gray-500">No related products available at the moment.</p>
+            </div>
+          )}
         </div>
       </section>
     </div>

@@ -4,6 +4,37 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
+        hostname: 'images.printful.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'cdn.printful.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'files.cdn.printful.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'api.printful.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'i.etsystatic.com',
+        port: '',
+        pathname: '/**',
+      },
+      // Printify image domains
+      {
+        protocol: 'https',
         hostname: 'images-api.printify.com',
         port: '',
         pathname: '/**',
@@ -17,6 +48,12 @@ const nextConfig = {
       {
         protocol: 'https',
         hostname: 'cdn.printify.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'api.printify.com',
         port: '',
         pathname: '/**',
       },
