@@ -130,15 +130,18 @@ class PrintfulAPI {
   }
 
   async getSwingHighProducts(offset: number = 0, limit: number = 20): Promise<PrintfulProductsResponse> {
+    console.log('Fetching all Printful products...');
     // Get all products and filter for SwingHigh products
     const allProducts = await this.request<PrintfulProductsResponse>(`/products?offset=${offset}&limit=100`);
+    console.log('All products fetched:', allProducts.data?.length || 0);
     
     // Filter for SwingHigh products with guards
     const swingHighProducts = allProducts.data.filter((product: any) => {
       // Get the product name from the correct field
       const productName = product.name || product.title || '';
+      console.log(`Checking product: "${productName}"`);
       
-      return productName && (
+      const isSwingHigh = productName && (
         productName.toLowerCase().includes('swing') ||
         productName.toLowerCase().includes('swinghigh') ||
         productName.toLowerCase().includes('custom') ||
@@ -147,6 +150,17 @@ class PrintfulAPI {
           tag && (tag.toLowerCase().includes('swing') || tag.toLowerCase().includes('swinghigh'))
         ))
       );
+      
+      if (isSwingHigh) {
+        console.log(`Found SwingHigh product: "${productName}"`);
+      }
+      
+      return isSwingHigh;
+    });
+
+    console.log('SwingHigh products found:', swingHighProducts.length);
+    swingHighProducts.forEach((product: any) => {
+      console.log(`- ${product.name} (ID: ${product.id})`);
     });
 
     return {
@@ -266,6 +280,7 @@ class PrintfulAPI {
       console.log('Fetching v2 product data...');
       const v2Product = await this.getProduct(syncProductId);
       console.log('v2 product data received:', v2Product ? 'yes' : 'no');
+      console.log('v2 product result:', v2Product?.result ? 'exists' : 'null/undefined');
       
       // Combine the data
       const combinedProduct = {
@@ -325,9 +340,49 @@ class PrintfulAPI {
         console.log('Attempting v2-only fallback...');
         const v2Product = await this.getProduct(syncProductId);
         console.log('v2 fallback successful:', v2Product ? 'yes' : 'no');
+        console.log('v2 product structure:', JSON.stringify(v2Product, null, 2));
         
-        if (!v2Product || !v2Product.result) {
-          throw new Error('v2 product data is null or undefined');
+        if (!v2Product) {
+          throw new Error('v2 product response is null or undefined');
+        }
+        
+        if (!v2Product.result) {
+          console.log('v2 product result is null/undefined, checking response structure...');
+          // Try to extract data from different possible structures
+          const productData = (v2Product as any).data || (v2Product as any).product || v2Product;
+          if (!productData) {
+            throw new Error('No product data found in v2 response');
+          }
+          
+          console.log('Using alternative product data structure');
+          const variants = await this.getProductVariantsWithCatalogInfo(syncProductId);
+          
+          return {
+            id: productData.id || syncProductId,
+            external_id: productData.external_id,
+            name: productData.name,
+            thumbnail_url: productData.thumbnail_url,
+            description: productData.description,
+            tags: productData.tags,
+            platform: 'printful',
+            variants: variants.map((variant: any) => ({
+              id: variant.id,
+              title: variant.name || `Variant ${variant.id}`,
+              price: parseFloat(variant.retail_price),
+              currency: variant.retail_price_currency || 'USD',
+              is_enabled: true,
+              color: variant.color,
+              size: variant.size,
+              catalog_info: variant.catalog_info
+            })),
+            images: [{
+              id: 1,
+              src: productData.thumbnail_url || '',
+              alt: productData.name,
+              width: 800,
+              height: 800
+            }]
+          };
         }
         
         const variants = await this.getProductVariantsWithCatalogInfo(syncProductId);

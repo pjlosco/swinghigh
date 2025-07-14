@@ -160,13 +160,27 @@ class ProductService {
       }
     } else if (platform === 'printful') {
       try {
+        console.log(`Fetching Printful product with ID: ${id}`);
+        
         // Get SwingHigh products and find the one with matching sync_product_id
+        console.log('Fetching SwingHigh products...');
         const productsResponse = await this.printful.getSwingHighProducts(0, 100);
+        console.log('SwingHigh products response:', productsResponse ? 'received' : 'null');
+        console.log('SwingHigh products count:', productsResponse.data?.length || 0);
+        
         const swingHighProducts = productsResponse.data || [];
         const product = swingHighProducts.find((p: any) => 
           p.published_to_stores?.some((store: any) => store.sync_product_id === parseInt(id))
         );
+        
+        console.log('Found matching product:', product ? 'yes' : 'no');
+        if (product) {
+          console.log('Product name:', product.name);
+          console.log('Product sync IDs:', product.published_to_stores?.map((s: any) => s.sync_product_id));
+        }
+        
         if (!product) {
+          console.log('No matching product found, returning null');
           return null;
         }
         
@@ -174,13 +188,23 @@ class ProductService {
         try {
           console.log('Attempting comprehensive API method...');
           const comprehensiveProduct = await this.printful.getProductComprehensive(parseInt(id));
+          console.log('Comprehensive product received:', comprehensiveProduct ? 'yes' : 'no');
+          if (comprehensiveProduct) {
+            console.log('Comprehensive product name:', comprehensiveProduct.name);
+            console.log('Comprehensive product variants count:', comprehensiveProduct.variants?.length || 0);
+          }
           return this.convertComprehensivePrintfulProduct(comprehensiveProduct);
         } catch (comprehensiveError) {
           console.error('Comprehensive API failed, falling back to original method:', comprehensiveError);
           
           // Fallback to original method
+          console.log('Using original method fallback...');
           const unifiedProduct = this.convertPrintfulProduct(product);
+          console.log('Converted product:', unifiedProduct.name);
+          
           const variants = await this.printful.getProductVariantsWithCatalogInfo(parseInt(id));
+          console.log('Variants fetched:', variants.length);
+          
           unifiedProduct.variants = variants.map((variant: any) => ({
             id: variant.id,
             title: variant.name || `Variant ${variant.id}`,
@@ -191,6 +215,8 @@ class ProductService {
             size: variant.size,
             catalog_info: variant.catalog_info
           }));
+          
+          console.log('Final unified product variants:', unifiedProduct.variants.length);
           return unifiedProduct;
         }
       } catch (error) {
